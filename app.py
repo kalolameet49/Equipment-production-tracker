@@ -15,6 +15,7 @@ try:
     conn = st.connection("gsheets", type=GSheetsConnection)
 except Exception as e:
     st.error(f"Failed to connect to Google Sheets: {e}")
+    st.stop()
 
 # --- FORM FOR SUPERVISOR ENTRY ---
 st.subheader("📋 Enter Shift Details")
@@ -46,8 +47,9 @@ if submit_button:
     # 1. Fetch current data from the sheet to prevent overwriting anything
     try:
         existing_data = conn.read(ttl=0) # ttl=0 ensures we bypass cache and get fresh data
+        if existing_data is None:
+            existing_data = pd.DataFrame()
     except Exception:
-        # If the sheet is completely blank, create an empty DataFrame
         existing_data = pd.DataFrame()
 
     # 2. Create a row from the new input fields
@@ -63,7 +65,10 @@ if submit_button:
     }])
     
     # 3. Combine old data with the new entry row
-    updated_df = pd.concat([existing_data, new_entry], ignore_index=True)
+    if existing_data.empty:
+        updated_df = new_entry
+    else:
+        updated_df = pd.concat([existing_data.dropna(how="all"), new_entry], ignore_index=True)
     
     # 4. Write back the complete updated dataset to the cloud
     try:
@@ -80,6 +85,9 @@ if 'conn' in locals():
     try:
         # Re-fetch data to show the supervisor what was just uploaded
         live_data = conn.read(ttl=0)
-        st.dataframe(live_data.tail(5), use_container_width=True)
+        if live_data is not None and not live_data.empty:
+            st.dataframe(live_data.tail(5), use_container_width=True)
+        else:
+            st.info("The Google Sheet is currently empty. Submit an entry above to create the first record!")
     except Exception:
-        st.caption("Unable to fetch fresh preview. Check your sheet access rights.")
+        st.caption("Unable to fetch fresh preview. Check your sheet access rights and secrets configuration.")
